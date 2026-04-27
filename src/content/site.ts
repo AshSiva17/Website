@@ -20,28 +20,24 @@ export const site = {
   },
 
   /** Replace with your photo: set `profileImage` to `/your-photo.jpg` in `public/` */
-  profileImage: '/profile-placeholder.svg',
+  profileImage: '/me.png',
 
   photos: [
     {
-      src: 'https://picsum.photos/seed/photo-a/900/600',
-      alt: 'Placeholder frame A',
-      caption: 'Replace with your image — edit `src/content/site.ts`.',
+      src: 'FrameA.png',
+      alt: 'Frame A',
     },
     {
-      src: 'https://picsum.photos/seed/photo-b/900/600',
-      alt: 'Placeholder frame B',
-      caption: 'Outdoor light, 35mm.',
+      src: 'FrameB.png',
+      alt: 'Frame B',
     },
     {
-      src: 'https://picsum.photos/seed/photo-c/900/600',
-      alt: 'Placeholder frame C',
-      caption: 'City geometry.',
+      src: '/FrameC.png',
+      alt: 'Frame C',
     },
     {
-      src: 'https://picsum.photos/seed/photo-d/900/600',
-      alt: 'Placeholder frame D',
-      caption: 'Late afternoon.',
+      src: '/FrameD.png',
+      alt: 'Frame D',
     },
   ],
 

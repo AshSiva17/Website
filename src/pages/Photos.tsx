@@ -9,10 +9,6 @@ export function Photos() {
       </p>
       <header className="content-page__header">
         <h1 className="content-page__title">Photos</h1>
-        <p className="content-page__intro">
-          Placeholder frames from Lorem Picsum — swap URLs and captions in{' '}
-          <code className="inline-code">src/content/site.ts</code>.
-        </p>
       </header>
 
       <ul className="photo-grid">
@@ -28,7 +24,6 @@ export function Photos() {
                 decoding="async"
                 className="photo-card__img"
               />
-              <figcaption className="photo-card__caption">{photo.caption}</figcaption>
             </figure>
           </li>
         ))}

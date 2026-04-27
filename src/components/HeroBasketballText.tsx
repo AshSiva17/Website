@@ -6,7 +6,7 @@ import {
   type LayoutCursor,
   type PreparedTextWithSegments,
 } from '@chenglou/pretext'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const LINE_HEIGHT = 29
 const FONT = '500 18px Lora'
@@ -39,6 +39,42 @@ const HOOP_GAP_BELOW_TEXT = 10
 const HOOP_RIGHT_SHIFT = 32
 const HOOP_LEFT_SHIFT = 32
 
+/** Half-width of the orange rim opening vs drawn sprite width (not the whole PNG). */
+const HOOP_SCORE_OPENING_U_HALF = 0.046
+const HOOP_SCORE_HALF_W_MIN = 13
+const HOOP_SCORE_HALF_W_MAX = 24
+
+const SCORE_STORAGE_KEY = 'site:hero-basketball-scores-v1'
+
+function readStoredScores(): { left: number; right: number } | null {
+  try {
+    const raw = localStorage.getItem(SCORE_STORAGE_KEY)
+    if (!raw) return null
+    const p = JSON.parse(raw) as unknown
+    if (
+      !p ||
+      typeof p !== 'object' ||
+      typeof (p as { left?: unknown }).left !== 'number' ||
+      typeof (p as { right?: unknown }).right !== 'number'
+    ) {
+      return null
+    }
+    const left = Math.max(0, Math.floor((p as { left: number }).left))
+    const right = Math.max(0, Math.floor((p as { right: number }).right))
+    return { left, right }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredScores(scores: { left: number; right: number }) {
+  try {
+    localStorage.setItem(SCORE_STORAGE_KEY, JSON.stringify(scores))
+  } catch {
+    /* private mode / quota */
+  }
+}
+
 type Ball = { x: number; y: number; vx: number; vy: number; r: number }
 
 type LaidOutLine = { text: string; y: number; xOffset: number }
@@ -68,7 +104,8 @@ type HoopLayout = {
   rimCy: number
   rimRx: number
   rimRy: number
-  scoreDist2: number
+  /** Half-width of orange rim opening for scoring (px), tighter than physics rimRx. */
+  scoreHalfW: number
   spriteDraw?: { x: number; y: number; w: number; h: number; mirror?: boolean }
 }
 
@@ -80,7 +117,6 @@ function hoopLayoutRight(
 ): HoopLayout {
   const rimRx = ballR * 1.35 + 10
   const rimRy = Math.max(7, ballR * 0.42)
-  const scoreDist2 = (ballR * 0.95 + 8) ** 2
 
   const textBottom = lineCount * LINE_HEIGHT
   const hoopTop = textBottom + HOOP_GAP_BELOW_TEXT
@@ -92,6 +128,10 @@ function hoopLayoutRight(
   let rimCx = columnW - 26 - HOOP_RIGHT_SHIFT * 0.4
   let rimCy = backY + backH - 4
   let spriteDraw: HoopLayout['spriteDraw']
+  let scoreHalfW = Math.min(
+    HOOP_SCORE_HALF_W_MAX,
+    Math.max(HOOP_SCORE_HALF_W_MIN, rimRx * 0.36),
+  )
 
   if (hoopImg?.complete && hoopImg.naturalWidth > 0) {
     const nh = hoopImg.naturalHeight
@@ -104,6 +144,10 @@ function hoopLayoutRight(
     spriteDraw = { x: drawX, y: drawY, w: destW, h: destH }
     rimCx = drawX + destW * HOOP_RIM_U
     rimCy = drawY + destH * HOOP_RIM_V
+    scoreHalfW = Math.min(
+      HOOP_SCORE_HALF_W_MAX,
+      Math.max(HOOP_SCORE_HALF_W_MIN, destW * HOOP_SCORE_OPENING_U_HALF),
+    )
   }
 
   return {
@@ -115,7 +159,7 @@ function hoopLayoutRight(
     rimCy,
     rimRx,
     rimRy,
-    scoreDist2,
+    scoreHalfW,
     spriteDraw,
   }
 }
@@ -127,7 +171,6 @@ function hoopLayoutLeft(
 ): HoopLayout {
   const rimRx = ballR * 1.35 + 10
   const rimRy = Math.max(7, ballR * 0.42)
-  const scoreDist2 = (ballR * 0.95 + 8) ** 2
 
   const textBottom = lineCount * LINE_HEIGHT
   const hoopTop = textBottom + HOOP_GAP_BELOW_TEXT
@@ -139,6 +182,10 @@ function hoopLayoutLeft(
   let rimCx = 26 + HOOP_LEFT_SHIFT * 0.4
   let rimCy = backY + backH - 4
   let spriteDraw: HoopLayout['spriteDraw']
+  let scoreHalfW = Math.min(
+    HOOP_SCORE_HALF_W_MAX,
+    Math.max(HOOP_SCORE_HALF_W_MIN, rimRx * 0.36),
+  )
 
   if (hoopImg?.complete && hoopImg.naturalWidth > 0) {
     const nh = hoopImg.naturalHeight
@@ -151,6 +198,10 @@ function hoopLayoutLeft(
     spriteDraw = { x: screenLeft, y: drawY, w: destW, h: destH, mirror: true }
     rimCx = screenLeft + destW * (1 - HOOP_RIM_U)
     rimCy = drawY + destH * HOOP_RIM_V
+    scoreHalfW = Math.min(
+      HOOP_SCORE_HALF_W_MAX,
+      Math.max(HOOP_SCORE_HALF_W_MIN, destW * HOOP_SCORE_OPENING_U_HALF),
+    )
   }
 
   return {
@@ -162,7 +213,7 @@ function hoopLayoutLeft(
     rimCy,
     rimRx,
     rimRy,
-    scoreDist2,
+    scoreHalfW,
     spriteDraw,
   }
 }
@@ -429,6 +480,18 @@ function dist2(ax: number, ay: number, bx: number, by: number) {
   return dx * dx + dy * dy
 }
 
+/** True when the ball crossed the rim plane top→bottom this frame while falling through the opening. */
+function ballMadeHoopThisFrame(
+  prevY: number,
+  ball: Ball,
+  hoop: HoopLayout,
+): boolean {
+  if (ball.vy <= 0.15) return false
+  if (prevY >= hoop.rimCy || ball.y < hoop.rimCy) return false
+  if (Math.abs(ball.x - hoop.rimCx) > hoop.scoreHalfW) return false
+  return true
+}
+
 function clampBallToBounds(
   ball: Ball,
   columnW: number,
@@ -467,6 +530,13 @@ export function HeroBasketballText({ text }: Props) {
   const scoresRef = useRef({ left: 0, right: 0 })
   const ballSpriteRef = useRef<HTMLImageElement | null>(null)
   const hoopSpriteRef = useRef<HTMLImageElement | null>(null)
+  /** Previous frame ball Y (css px); used to detect downward rim crossing after release. */
+  const prevBallYRef = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
+    const s = readStoredScores()
+    if (s) scoresRef.current = s
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -635,6 +705,9 @@ export function HeroBasketballText({ text }: Props) {
         return
       }
 
+      const prevBallY =
+        prevBallYRef.current === null ? ball.y : prevBallYRef.current
+
       const innerW = Math.max(MIN_LINE_WIDTH, columnW - 2 * TEXT_INSET_X)
       const lines = layoutParagraphAroundBall(
         prepared,
@@ -736,20 +809,28 @@ export function HeroBasketballText({ text }: Props) {
         }
       }
 
-      if (scoreCooldownLeftRef.current === 0) {
-        if (dist2(ball.x, ball.y, hoopL.rimCx, hoopL.rimCy) < hoopL.scoreDist2) {
+      if (!draggingRef.current) {
+        if (
+          scoreCooldownLeftRef.current === 0 &&
+          ballMadeHoopThisFrame(prevBallY, ball, hoopL)
+        ) {
           scoresRef.current.left += 1
+          writeStoredScores(scoresRef.current)
           spawnConfetti(confettiRef.current, hoopL.rimCx, hoopL.rimCy)
           scoreCooldownLeftRef.current = 95
         }
-      }
-      if (scoreCooldownRightRef.current === 0) {
-        if (dist2(ball.x, ball.y, hoopR.rimCx, hoopR.rimCy) < hoopR.scoreDist2) {
+        if (
+          scoreCooldownRightRef.current === 0 &&
+          ballMadeHoopThisFrame(prevBallY, ball, hoopR)
+        ) {
           scoresRef.current.right += 1
+          writeStoredScores(scoresRef.current)
           spawnConfetti(confettiRef.current, hoopR.rimCx, hoopR.rimCy)
           scoreCooldownRightRef.current = 95
         }
       }
+
+      prevBallYRef.current = ball.y
 
       const scoreY = cssH - SCORE_STRIP_H + 18
       ctx.save()
