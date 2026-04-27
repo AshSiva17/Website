@@ -13,6 +13,12 @@ const FONT = '500 18px Lora'
 const MIN_LINE_WIDTH = 72
 const TEXT_PAD = 10
 
+/** Horizontal inset so wrapped lines never touch canvas edges (fixes right-side crop). */
+const TEXT_INSET_X = 24
+
+/** Bottom strip height for scoreboard + padding. */
+const SCORE_STRIP_H = 48
+
 /** Served from `site/public/` — replace files to swap art */
 const ASSETS = {
   ball: '/pixel-basketball.png',
@@ -29,8 +35,9 @@ const HOOP_MAX_HEIGHT_PX = 158
 /** Space between last text line and top of hoop sprite. */
 const HOOP_GAP_BELOW_TEXT = 10
 
-/** Extra px added to drawX: shifts hoop right (may clip past canvas edge). */
+/** Extra px: right hoop anchor; left hoop uses symmetric negative space. */
 const HOOP_RIGHT_SHIFT = 32
+const HOOP_LEFT_SHIFT = 32
 
 type Ball = { x: number; y: number; vx: number; vy: number; r: number }
 
@@ -62,10 +69,10 @@ type HoopLayout = {
   rimRx: number
   rimRy: number
   scoreDist2: number
-  spriteDraw?: { x: number; y: number; w: number; h: number }
+  spriteDraw?: { x: number; y: number; w: number; h: number; mirror?: boolean }
 }
 
-function hoopLayout(
+function hoopLayoutRight(
   columnW: number,
   ballR: number,
   hoopImg: HTMLImageElement | null,
@@ -80,9 +87,9 @@ function hoopLayout(
 
   const backW = 10
   const backH = 72
-  const backX = columnW - backW - 2 + HOOP_RIGHT_SHIFT
+  const backX = columnW - backW - HOOP_RIGHT_SHIFT
   const backY = hoopTop
-  let rimCx = columnW - 26 + HOOP_RIGHT_SHIFT * 0.4
+  let rimCx = columnW - 26 - HOOP_RIGHT_SHIFT * 0.4
   let rimCy = backY + backH - 4
   let spriteDraw: HoopLayout['spriteDraw']
 
@@ -92,7 +99,7 @@ function hoopLayout(
     const destH = HOOP_MAX_HEIGHT_PX
     const scale = destH / nh
     const destW = nw * scale
-    const drawX = columnW - destW + HOOP_RIGHT_SHIFT
+    const drawX = Math.max(0, columnW - destW - HOOP_RIGHT_SHIFT)
     const drawY = hoopTop
     spriteDraw = { x: drawX, y: drawY, w: destW, h: destH }
     rimCx = drawX + destW * HOOP_RIM_U
@@ -113,11 +120,58 @@ function hoopLayout(
   }
 }
 
-function hoopOccupiedBottom(hoop: HoopLayout): number {
-  if (hoop.spriteDraw) {
-    return hoop.spriteDraw.y + hoop.spriteDraw.h
+function hoopLayoutLeft(
+  ballR: number,
+  hoopImg: HTMLImageElement | null,
+  lineCount: number,
+): HoopLayout {
+  const rimRx = ballR * 1.35 + 10
+  const rimRy = Math.max(7, ballR * 0.42)
+  const scoreDist2 = (ballR * 0.95 + 8) ** 2
+
+  const textBottom = lineCount * LINE_HEIGHT
+  const hoopTop = textBottom + HOOP_GAP_BELOW_TEXT
+
+  const backW = 10
+  const backH = 72
+  const backX = HOOP_LEFT_SHIFT
+  const backY = hoopTop
+  let rimCx = 26 + HOOP_LEFT_SHIFT * 0.4
+  let rimCy = backY + backH - 4
+  let spriteDraw: HoopLayout['spriteDraw']
+
+  if (hoopImg?.complete && hoopImg.naturalWidth > 0) {
+    const nh = hoopImg.naturalHeight
+    const nw = hoopImg.naturalWidth
+    const destH = HOOP_MAX_HEIGHT_PX
+    const scale = destH / nh
+    const destW = nw * scale
+    const screenLeft = HOOP_LEFT_SHIFT
+    const drawY = hoopTop
+    spriteDraw = { x: screenLeft, y: drawY, w: destW, h: destH, mirror: true }
+    rimCx = screenLeft + destW * (1 - HOOP_RIM_U)
+    rimCy = drawY + destH * HOOP_RIM_V
   }
-  return hoop.backY + hoop.backH + 12
+
+  return {
+    backX,
+    backY,
+    backW,
+    backH,
+    rimCx,
+    rimCy,
+    rimRx,
+    rimRy,
+    scoreDist2,
+    spriteDraw,
+  }
+}
+
+function hoopOccupiedBottomPair(left: HoopLayout, right: HoopLayout): number {
+  return Math.max(
+    left.spriteDraw ? left.spriteDraw.y + left.spriteDraw.h : left.backY + left.backH + 12,
+    right.spriteDraw ? right.spriteDraw.y + right.spriteDraw.h : right.backY + right.backH + 12,
+  )
 }
 
 function drawHoopProcedural(ctx: CanvasRenderingContext2D, h: HoopLayout) {
@@ -161,7 +215,13 @@ function drawHoop(
     const sd = h.spriteDraw
     ctx.save()
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(hoopImg, sd.x, sd.y, sd.w, sd.h)
+    if (sd.mirror) {
+      ctx.translate(sd.x + sd.w, sd.y)
+      ctx.scale(-1, 1)
+      ctx.drawImage(hoopImg, 0, 0, sd.w, sd.h)
+    } else {
+      ctx.drawImage(hoopImg, sd.x, sd.y, sd.w, sd.h)
+    }
     ctx.restore()
     return
   }
@@ -237,36 +297,39 @@ function updateAndDrawConfetti(
 function lineWidthForBall(
   lineCenterY: number,
   ball: Ball,
-  columnW: number,
+  innerW: number,
+  textInsetX: number,
 ): { maxWidth: number; xOffset: number } {
+  const bx = ball.x - textInsetX
   const dy = lineCenterY - ball.y
   if (Math.abs(dy) >= ball.r) {
-    return { maxWidth: columnW, xOffset: 0 }
+    return { maxWidth: innerW, xOffset: 0 }
   }
 
   const halfChord = Math.sqrt(ball.r * ball.r - dy * dy)
-  const leftEdge = ball.x - halfChord
-  const rightEdge = ball.x + halfChord
+  const leftEdge = bx - halfChord
+  const rightEdge = bx + halfChord
 
-  if (ball.x > columnW / 2) {
+  if (bx > innerW / 2) {
     const w = leftEdge - TEXT_PAD
     return {
-      maxWidth: Math.min(columnW, Math.max(MIN_LINE_WIDTH, w)),
+      maxWidth: Math.min(innerW, Math.max(MIN_LINE_WIDTH, w)),
       xOffset: 0,
     }
   }
 
-  const w = columnW - rightEdge - TEXT_PAD
+  const w = innerW - rightEdge - TEXT_PAD
   return {
-    maxWidth: Math.min(columnW, Math.max(MIN_LINE_WIDTH, w)),
+    maxWidth: Math.min(innerW, Math.max(MIN_LINE_WIDTH, w)),
     xOffset: Math.max(0, rightEdge + TEXT_PAD),
   }
 }
 
 function layoutParagraphAroundBall(
   prepared: PreparedTextWithSegments,
-  columnW: number,
+  innerW: number,
   ball: Ball,
+  textInsetX: number,
 ): LaidOutLine[] {
   const lines: LaidOutLine[] = []
   let cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
@@ -274,12 +337,17 @@ function layoutParagraphAroundBall(
 
   while (true) {
     const lineCenterY = y + LINE_HEIGHT / 2
-    const { maxWidth, xOffset } = lineWidthForBall(lineCenterY, ball, columnW)
+    const { maxWidth, xOffset } = lineWidthForBall(
+      lineCenterY,
+      ball,
+      innerW,
+      textInsetX,
+    )
     const range = layoutNextLineRange(prepared, cursor, maxWidth)
     if (range === null) break
 
     const line = materializeLineRange(prepared, range)
-    lines.push({ text: line.text, y, xOffset })
+    lines.push({ text: line.text, y, xOffset: textInsetX + xOffset })
     cursor = range.end
     y += LINE_HEIGHT
 
@@ -361,9 +429,15 @@ function dist2(ax: number, ay: number, bx: number, by: number) {
   return dx * dx + dy * dy
 }
 
-function clampBallToBounds(ball: Ball, columnW: number, cssH: number, margin = 8) {
+function clampBallToBounds(
+  ball: Ball,
+  columnW: number,
+  cssH: number,
+  margin = 8,
+) {
+  const playBottom = cssH - SCORE_STRIP_H - margin
   ball.x = Math.max(margin + ball.r, Math.min(columnW - margin - ball.r, ball.x))
-  ball.y = Math.max(margin + ball.r, Math.min(cssH - margin - ball.r, ball.y))
+  ball.y = Math.max(margin + ball.r, Math.min(playBottom - ball.r, ball.y))
 }
 
 type Props = { text: string }
@@ -372,7 +446,8 @@ export function HeroBasketballText({ text }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const prepared = useMemo(
-    () => prepareWithSegments(text, FONT, { letterSpacing: 0.09 }),
+    // No letterSpacing here: canvas fillText must match Pretext breaks (letterSpacing causes overflow).
+    () => prepareWithSegments(text, FONT),
     [text],
   )
 
@@ -387,7 +462,9 @@ export function HeroBasketballText({ text }: Props) {
   const cssHRef = useRef(320)
 
   const confettiRef = useRef<ConfettiPiece[]>([])
-  const scoreCooldownRef = useRef(0)
+  const scoreCooldownLeftRef = useRef(0)
+  const scoreCooldownRightRef = useRef(0)
+  const scoresRef = useRef({ left: 0, right: 0 })
   const ballSpriteRef = useRef<HTMLImageElement | null>(null)
   const hoopSpriteRef = useRef<HTMLImageElement | null>(null)
 
@@ -424,7 +501,8 @@ export function HeroBasketballText({ text }: Props) {
 
   const baseTextHeight = useMemo(() => {
     if (columnW <= 0) return 120
-    return layoutWithLines(prepared, columnW, LINE_HEIGHT).height + LINE_HEIGHT
+    const innerW = Math.max(MIN_LINE_WIDTH, columnW - 2 * TEXT_INSET_X)
+    return layoutWithLines(prepared, innerW, LINE_HEIGHT).height + LINE_HEIGHT
   }, [prepared, columnW])
 
   useEffect(() => {
@@ -557,14 +635,27 @@ export function HeroBasketballText({ text }: Props) {
         return
       }
 
-      const lines = layoutParagraphAroundBall(prepared, columnW, ball)
-      const hoop = hoopLayout(columnW, ball.r, hoopSpriteRef.current, lines.length)
-      const bottomContent = hoopOccupiedBottom(hoop)
-      const cssH = Math.max(
-        baseTextHeight + 48,
-        lines.length * LINE_HEIGHT + 40,
-        bottomContent + 48,
+      const innerW = Math.max(MIN_LINE_WIDTH, columnW - 2 * TEXT_INSET_X)
+      const lines = layoutParagraphAroundBall(
+        prepared,
+        innerW,
+        ball,
+        TEXT_INSET_X,
       )
+      const hoopL = hoopLayoutLeft(ball.r, hoopSpriteRef.current, lines.length)
+      const hoopR = hoopLayoutRight(
+        columnW,
+        ball.r,
+        hoopSpriteRef.current,
+        lines.length,
+      )
+      const bottomContent = hoopOccupiedBottomPair(hoopL, hoopR)
+      const cssH =
+        Math.max(
+          baseTextHeight + 48,
+          lines.length * LINE_HEIGHT + 40,
+          bottomContent + 36,
+        ) + SCORE_STRIP_H
       cssHRef.current = cssH
 
       if (draggingRef.current) {
@@ -581,19 +672,36 @@ export function HeroBasketballText({ text }: Props) {
       ctx.fillStyle = '#1c1b19'
       ctx.font = FONT
       ctx.textBaseline = 'top'
+      ctx.textAlign = 'left'
+
+      const textClipBottom = lines.length * LINE_HEIGHT + 4
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(
+        TEXT_INSET_X - 2,
+        0,
+        innerW + 4,
+        Math.min(textClipBottom, cssH - SCORE_STRIP_H),
+      )
+      ctx.clip()
 
       for (const line of lines) {
         ctx.fillText(line.text, line.xOffset, line.y)
       }
+      ctx.restore()
 
-      drawHoop(ctx, hoop, hoopSpriteRef.current)
+      drawHoop(ctx, hoopL, hoopSpriteRef.current)
+      drawHoop(ctx, hoopR, hoopSpriteRef.current)
 
       drawBasketball(ctx, ballSpriteRef.current, ball.x, ball.y, ball.r)
 
       updateAndDrawConfetti(ctx, confettiRef.current, cssH, columnW)
 
-      if (scoreCooldownRef.current > 0) {
-        scoreCooldownRef.current -= 1
+      if (scoreCooldownLeftRef.current > 0) {
+        scoreCooldownLeftRef.current -= 1
+      }
+      if (scoreCooldownRightRef.current > 0) {
+        scoreCooldownRightRef.current -= 1
       }
 
       if (!draggingRef.current) {
@@ -603,19 +711,22 @@ export function HeroBasketballText({ text }: Props) {
         ball.y += ball.vy
 
         const margin = 8
-        const rimBand =
-          Math.abs(ball.y - hoop.rimCy) < hoop.rimRy + ball.r * 1.2
+        const inLeftRimBand =
+          Math.abs(ball.y - hoopL.rimCy) < hoopL.rimRy + ball.r * 1.2
+        const inRightRimBand =
+          Math.abs(ball.y - hoopR.rimCy) < hoopR.rimRy + ball.r * 1.2
 
-        if (ball.y + ball.r > cssH - margin) {
-          ball.y = cssH - margin - ball.r
+        const floorY = cssH - SCORE_STRIP_H - margin
+        if (ball.y + ball.r > floorY) {
+          ball.y = floorY - ball.r
           ball.vy *= -0.52
           ball.vx *= 0.9
         }
-        if (ball.x + ball.r > columnW - margin && !rimBand) {
+        if (ball.x + ball.r > columnW - margin && !inRightRimBand) {
           ball.x = columnW - margin - ball.r
           ball.vx *= -0.62
         }
-        if (ball.x - ball.r < margin) {
+        if (ball.x - ball.r < margin && !inLeftRimBand) {
           ball.x = margin + ball.r
           ball.vx *= -0.62
         }
@@ -625,12 +736,33 @@ export function HeroBasketballText({ text }: Props) {
         }
       }
 
-      if (scoreCooldownRef.current === 0) {
-        if (dist2(ball.x, ball.y, hoop.rimCx, hoop.rimCy) < hoop.scoreDist2) {
-          spawnConfetti(confettiRef.current, hoop.rimCx, hoop.rimCy)
-          scoreCooldownRef.current = 95
+      if (scoreCooldownLeftRef.current === 0) {
+        if (dist2(ball.x, ball.y, hoopL.rimCx, hoopL.rimCy) < hoopL.scoreDist2) {
+          scoresRef.current.left += 1
+          spawnConfetti(confettiRef.current, hoopL.rimCx, hoopL.rimCy)
+          scoreCooldownLeftRef.current = 95
         }
       }
+      if (scoreCooldownRightRef.current === 0) {
+        if (dist2(ball.x, ball.y, hoopR.rimCx, hoopR.rimCy) < hoopR.scoreDist2) {
+          scoresRef.current.right += 1
+          spawnConfetti(confettiRef.current, hoopR.rimCx, hoopR.rimCy)
+          scoreCooldownRightRef.current = 95
+        }
+      }
+
+      const scoreY = cssH - SCORE_STRIP_H + 18
+      ctx.save()
+      ctx.font = '600 17px Lora'
+      ctx.fillStyle = '#1c1b19'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.fillText(
+        `${scoresRef.current.left} – ${scoresRef.current.right}`,
+        columnW / 2,
+        scoreY,
+      )
+      ctx.restore()
 
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -651,7 +783,7 @@ export function HeroBasketballText({ text }: Props) {
       <canvas
         ref={canvasRef}
         className="hero-basketball__canvas"
-        aria-label="Drag the basketball through the text and into the hoop"
+        aria-label="Drag the basketball through the text; score in the left or right hoop. Scoreboard shows left then right."
       />
       <p className="sr-only">{text}</p>
     </div>

@@ -9,23 +9,16 @@ export function Projects() {
       </p>
       <header className="content-page__header">
         <h1 className="content-page__title">Projects</h1>
-        <p className="content-page__intro">
-          Edit entries in <code className="inline-code">src/content/site.ts</code> — titles link out;
-          keep blurbs short and specific.
-        </p>
       </header>
 
       <ul className="project-list">
         {site.projects.map((p) => (
           <li key={p.title} className="project-list__item">
             <div className="project-list__meta">
-              <span className="project-list__label">{p.kicker}</span>
               <span className="project-list__year">{p.year}</span>
             </div>
             <h2 className="project-list__title">
-              <a href={p.href} className="project-list__link" target="_blank" rel="noreferrer">
                 {p.title}
-              </a>
             </h2>
             <p className="project-list__deck">{p.deck}</p>
           </li>

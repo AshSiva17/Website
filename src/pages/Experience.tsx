@@ -9,17 +9,13 @@ export function Experience() {
       </p>
       <header className="content-page__header">
         <h1 className="content-page__title">Experience</h1>
-        <p className="content-page__intro">
-          Roles and highlights — replace with your history in{' '}
-          <code className="inline-code">src/content/site.ts</code>.
-        </p>
+
       </header>
 
       <ol className="exp-list">
         {site.experience.map((job) => (
           <li key={`${job.org}-${job.start}`} className="exp-list__item">
             <div className="exp-list__head">
-              <span className="exp-list__label">{job.kicker}</span>
               <span className="exp-list__dates">
                 {job.start} — {job.end}
               </span>

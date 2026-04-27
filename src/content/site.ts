@@ -7,16 +7,16 @@
  */
 
 export const site = {
-  name: 'Your Name',
+  name: 'Ashwin Sivabalan',
   /** Lead paragraph on the home page */
   heroDeck:
-    "I'm a student and I'm kind of obsessed with technical problems — the kind where you don't really know the answer at first and have to poke at the system until it makes sense. I built this little site to keep my projects, photos, and stuff I've worked on in one place.",
+    "I'm a student at McMaster University studying Computer Science and Business. I'm interested in software development and building products that help people. I'm currently working on a project to help people learn about the stock market. Outside of school, I'm a huge sports fan and love to play basketball, soccer, and football. Right now I'm enjoying the NBA playoffs and Champions League semifinals.",
 
   /** Footer + profile link (e.g. mailto) */
   contact: {
-    email: 'you@example.com',
-    github: 'https://github.com/yourhandle',
-    linkedin: 'https://www.linkedin.com/in/yourhandle',
+    email: 'sivabalanashwin@example.com',
+    github: 'https://github.com/ashsiva17',
+    linkedin: 'https://www.linkedin.com/in/ashwin-sivabalan-6559ba329/',
   },
 
   /** Replace with your photo: set `profileImage` to `/your-photo.jpg` in `public/` */
@@ -47,62 +47,61 @@ export const site = {
 
   projects: [
     {
-      kicker: 'Product',
-      title: 'Atlas routing console',
-      deck: 'Internal tool for ops teams to trace parcel flows with live maps and anomaly flags.',
-      href: 'https://example.com',
-      year: '2025',
+      title: 'Local Image Optimizer',
+      deck: 'An image optimizer using React, Ruby, and C++, enabling batch processing of 50+ images with a local pipeline.',
+      year: 'April 2026',
     },
     {
-      kicker: 'Open source',
-      title: 'streamline-ts',
-      deck: 'Typed helpers for resilient fetch pipelines and backoff — fewer boilerplate retries.',
-      href: 'https://github.com/example/streamline-ts',
-      year: '2024',
+      title: 'Healthspan',
+      deck: ' A full-stack health content platform using Next.js and React, serving articles and videos to 500+ users.',
+      year: 'February 2026',
     },
     {
-      kicker: 'Experiment',
-      title: 'Night-reader CLI',
-      deck: 'Terminal RSS reader with keyboard-first navigation and offline cache.',
-      href: 'https://example.com',
-      year: '2023',
+      title: 'JamAI',
+      deck: ' A full-stack AI music studio using React and Node.js, enabling users to generate, edit, and export songs.',
+      year: 'February 2026',
     },
   ],
 
   experience: [
     {
-      kicker: 'Full-time',
-      title: 'Senior Software Engineer',
-      org: 'Northwind Labs',
+      title: 'Full-stack Developer',
+      org: 'Crow Report',
       location: 'Remote',
-      start: '2022',
-      end: 'Present',
+      start: 'January 2026',
+      end: 'March 2026',
       bullets: [
-        'Led redesign of core billing service; cut p99 latency by 38%.',
-        'Mentored two engineers through their first production on-call rotations.',
+        'Built a React aggregation platform integrating 100+ sources via APIs and scraping, enabling automated updates.',
+        'Implemented personalized recommendation logic using user behavior tracking, boosting engagement by 25%.',
+        'Developed admin dashboards and CMS tools for content moderation and management, reducing manual workload.',
+        'Conducted usability testing with 15+ users, identifying UX issues and driving improvements to increase retention.',
+        'Optimized API calls, caching, and frontend rendering, reducing latency by 35% and improving overall responsiveness.',
       ],
     },
     {
-      kicker: 'Contract',
-      title: 'Frontend Engineer',
-      org: 'Riverlight Studio',
-      location: 'Toronto',
-      start: '2020',
-      end: '2022',
+      title: 'Software Engineer Intern',
+      org: 'NewsTruffle',
+      location: 'Remote',
+      start: 'July 2025',
+      end: 'August 2025',
       bullets: [
-        'Shipped marketing and app surfaces in React with a strict design system.',
-        'Built accessibility audits into CI for critical user paths.',
+        'Developed responsive web pages using frontend frameworks, improving accessibility across desktop and mobile devices.',
+        'Collaborated with developers to debug frontend issues, reducing user-reported bugs by 15% and improving stability.',
+        'Integrated Google Analytics and AdSense, enabling traffic insights and monetization tracking for 10K+ monthly users.',
+        'Contributed to feature development and deployment cycles, accelerating release times by 20% through faster iteration.',
       ],
     },
     {
-      kicker: 'Internship',
-      title: 'Software Intern',
-      org: 'Cedar Analytics',
-      location: 'Montreal',
-      start: '2019',
-      end: '2020',
+      title: 'Software Engineer',
+      org: 'Skool HMW',
+      location: 'Brampton',
+      start: 'May 2024',
+      end: 'August 2024',
       bullets: [
-        'Implemented ETL monitoring dashboards used by data science stakeholders.',
+        'Developed core features for an education platform, improving assignment tracking and usability for 200+ active users.',
+        'Built backend systems to handle 1K+ student submissions, improving data retrieval efficiency by 30%.',
+        'Collaborated with team members on feature design and iteration, improving functionality based on user feedback.',
+        'Tested and debugged application components, increasing system reliability and reducing runtime errors by 35%.',
       ],
     },
   ],
