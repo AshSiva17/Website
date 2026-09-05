@@ -10,11 +10,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const LINE_HEIGHT = 29
 const FONT = '500 18px Lora'
-const MIN_LINE_WIDTH = 72
 const TEXT_PAD = 10
+/** Shrink wrap width slightly so canvas fillText never outruns Pretext breaks. */
+const MEASURE_SLACK = 3
 
-/** Horizontal inset so wrapped lines never touch canvas edges (fixes right-side crop). */
-const TEXT_INSET_X = 24
+/** Horizontal inset so wrapped lines never touch canvas edges. */
+const TEXT_INSET_X = 16
 
 /** Bottom strip height for scoreboard + padding. */
 const SCORE_STRIP_H = 48
@@ -353,27 +354,27 @@ function lineWidthForBall(
 ): { maxWidth: number; xOffset: number } {
   const bx = ball.x - textInsetX
   const dy = lineCenterY - ball.y
-  if (Math.abs(dy) >= ball.r) {
-    return { maxWidth: innerW, xOffset: 0 }
+  const clearR = ball.r + TEXT_PAD
+  if (Math.abs(dy) >= clearR) {
+    return { maxWidth: Math.max(1, innerW - MEASURE_SLACK), xOffset: 0 }
   }
 
-  const halfChord = Math.sqrt(ball.r * ball.r - dy * dy)
-  const leftEdge = bx - halfChord
-  const rightEdge = bx + halfChord
+  const halfChord = Math.sqrt(Math.max(0, clearR * clearR - dy * dy))
+  const leftWidth = Math.max(0, bx - halfChord)
+  const rightStart = bx + halfChord
+  const rightWidth = Math.max(0, innerW - rightStart)
 
-  if (bx > innerW / 2) {
-    const w = leftEdge - TEXT_PAD
+  // Never force a width larger than the clear gap (that caused right-edge crop).
+  if (leftWidth >= rightWidth) {
     return {
-      maxWidth: Math.min(innerW, Math.max(MIN_LINE_WIDTH, w)),
+      maxWidth: Math.max(1, Math.min(innerW, leftWidth) - MEASURE_SLACK),
       xOffset: 0,
     }
   }
 
-  const w = innerW - rightEdge - TEXT_PAD
-  return {
-    maxWidth: Math.min(innerW, Math.max(MIN_LINE_WIDTH, w)),
-    xOffset: Math.max(0, rightEdge + TEXT_PAD),
-  }
+  const maxWidth = Math.max(1, Math.min(innerW, rightWidth) - MEASURE_SLACK)
+  const xOffset = Math.min(Math.max(0, rightStart), Math.max(0, innerW - maxWidth))
+  return { maxWidth, xOffset }
 }
 
 function layoutParagraphAroundBall(
@@ -394,10 +395,17 @@ function layoutParagraphAroundBall(
       innerW,
       textInsetX,
     )
-    const range = layoutNextLineRange(prepared, cursor, maxWidth)
+    const range = layoutNextLineRange(prepared, cursor, Math.max(8, maxWidth))
     if (range === null) break
 
     const line = materializeLineRange(prepared, range)
+    // Guard against a zero-advance line (pathological tiny widths).
+    if (
+      range.end.segmentIndex === cursor.segmentIndex &&
+      range.end.graphemeIndex === cursor.graphemeIndex
+    ) {
+      break
+    }
     lines.push({ text: line.text, y, xOffset: textInsetX + xOffset })
     cursor = range.end
     y += LINE_HEIGHT
@@ -508,10 +516,12 @@ type Props = { text: string }
 export function HeroBasketballText({ text }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [fontReady, setFontReady] = useState(false)
   const prepared = useMemo(
-    // No letterSpacing here: canvas fillText must match Pretext breaks (letterSpacing causes overflow).
+    // No letterSpacing here: canvas fillText must match Pretext breaks.
+    // Re-prepare after fonts load so Lora metrics match fillText.
     () => prepareWithSegments(text, FONT),
-    [text],
+    [text, fontReady],
   )
 
   const [columnW, setColumnW] = useState(0)
@@ -536,6 +546,23 @@ export function HeroBasketballText({ text }: Props) {
   useLayoutEffect(() => {
     const s = readStoredScores()
     if (s) scoresRef.current = s
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const markReady = () => {
+      if (!cancelled) setFontReady(true)
+    }
+    if (document.fonts?.status === 'loaded') {
+      markReady()
+    } else if (document.fonts?.ready) {
+      void document.fonts.ready.then(markReady)
+    } else {
+      markReady()
+    }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -571,7 +598,7 @@ export function HeroBasketballText({ text }: Props) {
 
   const baseTextHeight = useMemo(() => {
     if (columnW <= 0) return 120
-    const innerW = Math.max(MIN_LINE_WIDTH, columnW - 2 * TEXT_INSET_X)
+    const innerW = Math.max(1, columnW - 2 * TEXT_INSET_X - MEASURE_SLACK)
     return layoutWithLines(prepared, innerW, LINE_HEIGHT).height + LINE_HEIGHT
   }, [prepared, columnW])
 
@@ -708,7 +735,7 @@ export function HeroBasketballText({ text }: Props) {
       const prevBallY =
         prevBallYRef.current === null ? ball.y : prevBallYRef.current
 
-      const innerW = Math.max(MIN_LINE_WIDTH, columnW - 2 * TEXT_INSET_X)
+      const innerW = Math.max(1, columnW - 2 * TEXT_INSET_X)
       const lines = layoutParagraphAroundBall(
         prepared,
         innerW,
@@ -723,11 +750,13 @@ export function HeroBasketballText({ text }: Props) {
         lines.length,
       )
       const bottomContent = hoopOccupiedBottomPair(hoopL, hoopR)
+      const textBottom = lines.length * LINE_HEIGHT
       const cssH =
         Math.max(
           baseTextHeight + 48,
-          lines.length * LINE_HEIGHT + 40,
+          textBottom + 40,
           bottomContent + 36,
+          textBottom + HOOP_GAP_BELOW_TEXT + HOOP_MAX_HEIGHT_PX + 24,
         ) + SCORE_STRIP_H
       cssHRef.current = cssH
 
@@ -746,22 +775,12 @@ export function HeroBasketballText({ text }: Props) {
       ctx.font = FONT
       ctx.textBaseline = 'top'
       ctx.textAlign = 'left'
-
-      const textClipBottom = lines.length * LINE_HEIGHT + 4
-      ctx.save()
-      ctx.beginPath()
-      ctx.rect(
-        TEXT_INSET_X - 2,
-        0,
-        innerW + 4,
-        Math.min(textClipBottom, cssH - SCORE_STRIP_H),
-      )
-      ctx.clip()
+      // Prefer smooth glyphs for body copy; sprites re-disable smoothing when drawn.
+      ctx.imageSmoothingEnabled = true
 
       for (const line of lines) {
         ctx.fillText(line.text, line.xOffset, line.y)
       }
-      ctx.restore()
 
       drawHoop(ctx, hoopL, hoopSpriteRef.current)
       drawHoop(ctx, hoopR, hoopSpriteRef.current)

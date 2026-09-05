@@ -147,8 +147,6 @@ body {
   margin: 0 auto;
   cursor: grab;
   touch-action: none;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
 }
 
 .hero-basketball__canvas.hero-basketball__canvas--grabbing,
