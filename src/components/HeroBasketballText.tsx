@@ -40,10 +40,13 @@ const HOOP_GAP_BELOW_TEXT = 10
 const HOOP_RIGHT_SHIFT = 32
 const HOOP_LEFT_SHIFT = 32
 
-/** Half-width of the orange rim opening vs drawn sprite width (not the whole PNG). */
-const HOOP_SCORE_OPENING_U_HALF = 0.046
-const HOOP_SCORE_HALF_W_MIN = 13
-const HOOP_SCORE_HALF_W_MAX = 24
+/** Orange rim scoring zone vs drawn sprite (center + half-extents). */
+const HOOP_SCORE_OPENING_U_HALF = 0.085
+const HOOP_SCORE_RIM_V_HALF = 0.055
+const HOOP_SCORE_HALF_W_MIN = 18
+const HOOP_SCORE_HALF_W_MAX = 36
+const HOOP_SCORE_HALF_H_MIN = 8
+const HOOP_SCORE_HALF_H_MAX = 20
 
 const SCORE_STORAGE_KEY = 'site:hero-basketball-scores-v1'
 
@@ -105,8 +108,10 @@ type HoopLayout = {
   rimCy: number
   rimRx: number
   rimRy: number
-  /** Half-width of orange rim opening for scoring (px), tighter than physics rimRx. */
+  /** Half-width of orange rim opening for scoring (px). */
   scoreHalfW: number
+  /** Half-height of orange rim band for scoring (px) — front through back of rim. */
+  scoreHalfH: number
   spriteDraw?: { x: number; y: number; w: number; h: number; mirror?: boolean }
 }
 
@@ -131,7 +136,11 @@ function hoopLayoutRight(
   let spriteDraw: HoopLayout['spriteDraw']
   let scoreHalfW = Math.min(
     HOOP_SCORE_HALF_W_MAX,
-    Math.max(HOOP_SCORE_HALF_W_MIN, rimRx * 0.36),
+    Math.max(HOOP_SCORE_HALF_W_MIN, rimRx * 0.55),
+  )
+  let scoreHalfH = Math.min(
+    HOOP_SCORE_HALF_H_MAX,
+    Math.max(HOOP_SCORE_HALF_H_MIN, rimRy * 1.4),
   )
 
   if (hoopImg?.complete && hoopImg.naturalWidth > 0) {
@@ -149,6 +158,10 @@ function hoopLayoutRight(
       HOOP_SCORE_HALF_W_MAX,
       Math.max(HOOP_SCORE_HALF_W_MIN, destW * HOOP_SCORE_OPENING_U_HALF),
     )
+    scoreHalfH = Math.min(
+      HOOP_SCORE_HALF_H_MAX,
+      Math.max(HOOP_SCORE_HALF_H_MIN, destH * HOOP_SCORE_RIM_V_HALF),
+    )
   }
 
   return {
@@ -161,6 +174,7 @@ function hoopLayoutRight(
     rimRx,
     rimRy,
     scoreHalfW,
+    scoreHalfH,
     spriteDraw,
   }
 }
@@ -185,7 +199,11 @@ function hoopLayoutLeft(
   let spriteDraw: HoopLayout['spriteDraw']
   let scoreHalfW = Math.min(
     HOOP_SCORE_HALF_W_MAX,
-    Math.max(HOOP_SCORE_HALF_W_MIN, rimRx * 0.36),
+    Math.max(HOOP_SCORE_HALF_W_MIN, rimRx * 0.55),
+  )
+  let scoreHalfH = Math.min(
+    HOOP_SCORE_HALF_H_MAX,
+    Math.max(HOOP_SCORE_HALF_H_MIN, rimRy * 1.4),
   )
 
   if (hoopImg?.complete && hoopImg.naturalWidth > 0) {
@@ -203,6 +221,10 @@ function hoopLayoutLeft(
       HOOP_SCORE_HALF_W_MAX,
       Math.max(HOOP_SCORE_HALF_W_MIN, destW * HOOP_SCORE_OPENING_U_HALF),
     )
+    scoreHalfH = Math.min(
+      HOOP_SCORE_HALF_H_MAX,
+      Math.max(HOOP_SCORE_HALF_H_MIN, destH * HOOP_SCORE_RIM_V_HALF),
+    )
   }
 
   return {
@@ -215,6 +237,7 @@ function hoopLayoutLeft(
     rimRx,
     rimRy,
     scoreHalfW,
+    scoreHalfH,
     spriteDraw,
   }
 }
@@ -488,15 +511,21 @@ function dist2(ax: number, ay: number, bx: number, by: number) {
   return dx * dx + dy * dy
 }
 
-/** True when the ball crossed the rim plane top→bottom this frame while falling through the opening. */
+/** True when the ball descends through any part of the orange rim band this frame. */
 function ballMadeHoopThisFrame(
   prevY: number,
   ball: Ball,
   hoop: HoopLayout,
 ): boolean {
   if (ball.vy <= 0.15) return false
-  if (prevY >= hoop.rimCy || ball.y < hoop.rimCy) return false
   if (Math.abs(ball.x - hoop.rimCx) > hoop.scoreHalfW) return false
+
+  const zoneTop = hoop.rimCy - hoop.scoreHalfH
+  const zoneBottom = hoop.rimCy + hoop.scoreHalfH
+
+  // Frame segment must move downward and overlap the full rim depth, not just the front edge.
+  if (ball.y <= prevY) return false
+  if (prevY >= zoneBottom || ball.y <= zoneTop) return false
   return true
 }
 
